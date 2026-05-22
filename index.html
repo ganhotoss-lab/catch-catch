@@ -766,7 +766,7 @@ async function searchAllKeywords() {
       resolve();
     }, {
       location: new kakao.maps.LatLng(myLat, myLng),
-      radius: 5000,
+      radius: 10000,
       sort: kakao.maps.services.SortBy.DISTANCE
     });
   });
