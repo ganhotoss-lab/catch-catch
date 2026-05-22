@@ -639,6 +639,10 @@ const KEYWORDS = [
   '캐릭터뽑기', '뽑기하우스', '토이하우스',
 ];
 
+// 카테고리 검색: AT4(오락실) — 봉봉스테이션처럼 오락실로 등록된 뽑기방 커버
+// keywordSearch 결과에 없는 매장을 보완
+const CATEGORY_CODES = ['AT4'];
+
 // ── 스코어링 필터 ──
 // 상호명/카테고리 기준으로 점수 계산 → 임계값 미만 제외
 const SCORE_WHITE = [
@@ -655,7 +659,7 @@ const SCORE_BLACK = [
   // -2점: 관련 없을 가능성 높은 단어
   { pattern: /식당|카페|커피|빵|베이커리|마트|편의점|약국|병원|학원|부동산/, score: -2 },
 ];
-const SCORE_THRESHOLD = 1; // 이 점수 미만이면 제외
+const SCORE_THRESHOLD = 0; // 0점 이상이면 포함 (오락실 카테고리 매장 커버)
 
 function calcScore(place) {
   const target = (place.place_name + ' ' + (place.category_name || '')).toLowerCase();
@@ -747,12 +751,18 @@ async function searchAllKeywords() {
   const results = [];
 
   // 결과 추가 헬퍼 — 스코어링 필터 통과한 것만 추가
-  function addResult(p) {
+  function addResult(p, kw) {
     if (!seen.has(p.id)) {
       seen.add(p.id);
-      if (isRelevant(p)) {
+      const score = calcScore(p);
+      const relevant = isRelevant(p);
+      // 디버그: 봉봉 관련 매장은 항상 콘솔 출력
+      if (p.place_name.includes('봉봉') || p.place_name.includes('뽑기') || p.place_name.includes('크레인')) {
+        console.log(`[${kw}] ${p.place_name} | 점수:${score} | 통과:${relevant} | 카테고리:${p.category_name}`);
+      }
+      if (relevant) {
         const dist = haversine(myLat, myLng, parseFloat(p.y), parseFloat(p.x));
-        results.push({ ...p, dist, score: calcScore(p) });
+        results.push({ ...p, dist, score });
       }
     }
   }
@@ -761,7 +771,7 @@ async function searchAllKeywords() {
   const searchByKeyword = (kw) => new Promise(resolve => {
     ps.keywordSearch(kw, (data, status) => {
       if (status === kakao.maps.services.Status.OK) {
-        data.forEach(addResult);
+        data.forEach(p => addResult(p, kw));
       }
       resolve();
     }, {
@@ -771,7 +781,38 @@ async function searchAllKeywords() {
     });
   });
 
-  // 키워드 순차 검색
+  // 카테고리 검색 (페이지 순회)
+  const searchByCategory = (code) => new Promise(resolve => {
+    let page = 1;
+    const fetchPage = () => {
+      ps.categorySearch(code, (data, status, pagination) => {
+        if (status === kakao.maps.services.Status.OK) {
+          data.forEach(p => addResult(p, `CAT:${code}`));
+          if (pagination.hasNextPage && page < 5) {
+            page++;
+            pagination.nextPage();
+          } else {
+            resolve();
+          }
+        } else {
+          resolve();
+        }
+      }, {
+        location: new kakao.maps.LatLng(myLat, myLng),
+        radius: 10000,
+        sort: kakao.maps.services.SortBy.DISTANCE
+      });
+    };
+    fetchPage();
+  });
+
+  // 1단계: 카테고리 검색 (오락실 전체 — 봉봉스테이션 등 커버)
+  for (const code of CATEGORY_CODES) {
+    await searchByCategory(code);
+    await new Promise(r => setTimeout(r, 80));
+  }
+
+  // 2단계: 키워드 순차 검색
   for (const kw of KEYWORDS) {
     await searchByKeyword(kw);
     await new Promise(r => setTimeout(r, 80));
@@ -779,6 +820,8 @@ async function searchAllKeywords() {
 
   // 점수 높은 순 → 거리 순 정렬
   allStores = results.sort((a, b) => (b.score - a.score) || (a.dist - b.dist));
+  console.log(`[검색완료] 총 ${allStores.length}개 매장`);
+  console.log('[전체목록]', allStores.map(s => `${s.place_name}(${s.score}점, ${Math.round(s.dist)}m)`));
   applyFilter();
   document.getElementById('loadingOverlay').classList.add('hidden');
 }
