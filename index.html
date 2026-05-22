@@ -637,11 +637,9 @@ const KEYWORDS = [
   '스마일뽑기', '해피뽑기', '드림뽑기', '뽑기월드', '뽑기킹',
   '토이존', '크레인파크', '토이파크', '뽑기팡',
   '캐릭터뽑기', '뽑기하우스', '토이하우스',
+  // 봉봉 계열 직접 추가
+  '봉봉스테이션', '봉봉게임즈', '봉봉',
 ];
-
-// 카테고리 검색: AT4(오락실) — 봉봉스테이션처럼 오락실로 등록된 뽑기방 커버
-// keywordSearch 결과에 없는 매장을 보완
-const CATEGORY_CODES = ['AT4'];
 
 // ── 스코어링 필터 ──
 // 상호명/카테고리 기준으로 점수 계산 → 임계값 미만 제외
@@ -781,38 +779,7 @@ async function searchAllKeywords() {
     });
   });
 
-  // 카테고리 검색 (페이지 순회)
-  const searchByCategory = (code) => new Promise(resolve => {
-    let page = 1;
-    const fetchPage = () => {
-      ps.categorySearch(code, (data, status, pagination) => {
-        if (status === kakao.maps.services.Status.OK) {
-          data.forEach(p => addResult(p, `CAT:${code}`));
-          if (pagination.hasNextPage && page < 5) {
-            page++;
-            pagination.nextPage();
-          } else {
-            resolve();
-          }
-        } else {
-          resolve();
-        }
-      }, {
-        location: new kakao.maps.LatLng(myLat, myLng),
-        radius: 10000,
-        sort: kakao.maps.services.SortBy.DISTANCE
-      });
-    };
-    fetchPage();
-  });
-
-  // 1단계: 카테고리 검색 (오락실 전체 — 봉봉스테이션 등 커버)
-  for (const code of CATEGORY_CODES) {
-    await searchByCategory(code);
-    await new Promise(r => setTimeout(r, 80));
-  }
-
-  // 2단계: 키워드 순차 검색
+  // 키워드 순차 검색
   for (const kw of KEYWORDS) {
     await searchByKeyword(kw);
     await new Promise(r => setTimeout(r, 80));
